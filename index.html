@@ -17,6 +17,8 @@
 </head>
 <body>
     <div id="loading">Loading...</div>
+    <!-- Note: allow-same-origin with allow-scripts reduces sandbox security,
+         but is required for the previewed content to function properly -->
     <iframe id="preview" sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"></iframe>
     <script>
         (function() {
@@ -48,11 +50,12 @@
                 if (relative.startsWith('http://') || relative.startsWith('https://') || relative.startsWith('//')) {
                     return relative;
                 }
-                if (relative.startsWith('/')) {
-                    const urlObj = new URL(base);
-                    return urlObj.origin + relative;
+                // Use URL constructor for proper relative path resolution
+                try {
+                    return new URL(relative, base).href;
+                } catch (e) {
+                    return base + relative;
                 }
-                return base + relative;
             }
             
             const rawUrl = toRawUrl(targetUrl);
@@ -77,15 +80,15 @@
                 .then(html => {
                     // Rewrite resource URLs - optimized with single pass
                     html = html
-                        .replace(/\b(href|src|srcset)=["'](?!https?:|\/\/|data:|#|mailto:|tel:)([^"']+)["']/gi, (match, attr, url) => {
-                            return `${attr}="${resolveUrl(baseUrl, url)}"`;
+                        .replace(/\s(href|src|srcset)=["'](?!https?:|\/\/|data:|#|mailto:|tel:)([^"']+)["']/gi, (match, attr, url) => {
+                            return ` ${attr}="${resolveUrl(baseUrl, url)}"`;
                         })
                         .replace(/url\(["']?(?!https?:|\/\/|data:)([^"')]+)["']?\)/gi, (match, url) => {
                             return `url("${resolveUrl(baseUrl, url)}")`;
                         });
                     
                     // Add base tag for any remaining relative URLs
-                    if (!html.includes('<base')) {
+                    if (!/<base\s[^>]*>/i.test(html)) {
                         html = html.replace(/<head>/i, `<head><base href="${baseUrl}">`);
                     }
                     
