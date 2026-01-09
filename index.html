@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HTML Preview</title>
+    <style>
+        body { margin: 0; padding: 0; overflow: hidden; }
+        #preview { width: 100%; height: 100vh; border: none; }
+        #loading { 
+            position: fixed; top: 50%; left: 50%; 
+            transform: translate(-50%, -50%); 
+            font-family: sans-serif; 
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="loading">Loading...</div>
+    <iframe id="preview" sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"></iframe>
+    <script>
+        (function() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const targetUrl = urlParams.get('url');
+            
+            if (!targetUrl) {
+                document.body.innerHTML = '<div style="text-align:center;padding:50px;font-family:sans-serif;"><h1>HTML Preview</h1><p>Add ?url=YOUR_URL to preview an HTML file</p><p>Example: ?url=https://github.com/user/repo/blob/main/public/index.html</p></div>';
+                return;
+            }
+            
+            const loading = document.getElementById('loading');
+            const preview = document.getElementById('preview');
+            loading.style.display = 'block';
+            
+            function toRawUrl(url) {
+                if (url.includes('github.com') && url.includes('/blob/')) {
+                    return url.replace('github.com', 'raw.githubusercontent.com').replace('/blob/', '/');
+                }
+                return url;
+            }
+            
+            function getBaseUrl(url) {
+                const lastSlash = url.lastIndexOf('/');
+                return url.substring(0, lastSlash + 1);
+            }
+            
+            function resolveUrl(base, relative) {
+                if (relative.startsWith('http://') || relative.startsWith('https://') || relative.startsWith('//')) {
+                    return relative;
+                }
+                if (relative.startsWith('/')) {
+                    const urlObj = new URL(base);
+                    return urlObj.origin + relative;
+                }
+                return base + relative;
+            }
+            
+            const rawUrl = toRawUrl(targetUrl);
+            const baseUrl = getBaseUrl(rawUrl);
+            
+            // Try direct fetch first (fast), fallback to CORS proxy
+            async function fetchHtml() {
+                try {
+                    const response = await fetch(rawUrl);
+                    if (!response.ok) throw new Error('Direct fetch failed');
+                    return await response.text();
+                } catch (error) {
+                    // Fallback to CORS proxy
+                    const corsProxy = 'https://api.allorigins.win/raw?url=';
+                    const response = await fetch(corsProxy + encodeURIComponent(rawUrl));
+                    if (!response.ok) throw new Error('Failed to fetch HTML');
+                    return await response.text();
+                }
+            }
+            
+            fetchHtml()
+                .then(html => {
+                    // Rewrite resource URLs - optimized with single pass
+                    html = html
+                        .replace(/\b(href|src|srcset)=["'](?!https?:|\/\/|data:|#|mailto:|tel:)([^"']+)["']/gi, (match, attr, url) => {
+                            return `${attr}="${resolveUrl(baseUrl, url)}"`;
+                        })
+                        .replace(/url\(["']?(?!https?:|\/\/|data:)([^"')]+)["']?\)/gi, (match, url) => {
+                            return `url("${resolveUrl(baseUrl, url)}")`;
+                        });
+                    
+                    // Add base tag for any remaining relative URLs
+                    if (!html.includes('<base')) {
+                        html = html.replace(/<head>/i, `<head><base href="${baseUrl}">`);
+                    }
+                    
+                    // Inject into iframe
+                    const doc = preview.contentDocument || preview.contentWindow.document;
+                    doc.open();
+                    doc.write(html);
+                    doc.close();
+                    
+                    loading.style.display = 'none';
+                })
+                .catch(error => {
+                    loading.innerHTML = `<div style="color:red;">Error: ${error.message}<br><br>Make sure the URL is accessible and CORS is enabled.</div>`;
+                });
+        })();
+    </script>
+</body>
+</html>
