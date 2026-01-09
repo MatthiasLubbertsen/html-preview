@@ -50,11 +50,16 @@
                 if (relative.startsWith('http://') || relative.startsWith('https://') || relative.startsWith('//')) {
                     return relative;
                 }
+                // Handle fragment-only URLs
+                if (relative.startsWith('#')) {
+                    return relative;
+                }
                 // Use URL constructor for proper relative path resolution
                 try {
                     return new URL(relative, base).href;
                 } catch (e) {
-                    return base + relative;
+                    // If URL resolution fails, return original to avoid breaking the page
+                    return relative;
                 }
             }
             
@@ -89,7 +94,11 @@
                     
                     // Add base tag for any remaining relative URLs
                     if (!/<base\s[^>]*>/i.test(html)) {
-                        html = html.replace(/<head>/i, `<head><base href="${baseUrl}">`);
+                        if (/<head>/i.test(html)) {
+                            html = html.replace(/<head>/i, `<head><base href="${baseUrl}">`);
+                        } else if (/<html[^>]*>/i.test(html)) {
+                            html = html.replace(/<html[^>]*>/i, match => `${match}<base href="${baseUrl}">`);
+                        }
                     }
                     
                     // Inject into iframe
